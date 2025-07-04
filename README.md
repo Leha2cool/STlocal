@@ -1,228 +1,249 @@
-# STlocal
+## STlocal.js - Продвинутая библиотека для работы с localStorage
 
-# STlocal.js - Расширенная библиотека для работы с localStorage
+**Версия:** 3.0.0  
+**Дата:** 2025-07-04  
+**GitHub:** https://github.com/Leha2cool  
 
-## Описание
+### Введение
+STlocal.js - это современная библиотека для работы с Web Storage (localStorage и sessionStorage), предоставляющая расширенные возможности:
+- Пространства имен
+- Автоматическое удаление просроченных данных (TTL)
+- Шифрование данных
+- Межвкладковую синхронизацию
+- Систему событий и плагинов
+- Поддержку сложных типов данных
+- Статистику использования
+- Резервное копирование
 
-STlocal.js - это мощная библиотека JavaScript, предоставляющая расширенные возможности для работы с localStorage. Она решает основные проблемы стандартной реализации, предлагая такие функции как пространства имен, время жизни данных (TTL), шифрование, систему событий и плагинов, а также множество дополнительных полезных функций.
+---
 
-### Ключевые особенности:
-- **Пространства имен** - Изоляция данных разных модулей приложения
-- **TTL (Time-To-Live)** - Автоматическое удаление устаревших данных
-- **Шифрование** - Защита конфиденциальной информации
-- **Система событий** - Реакция на изменения данных
-- **Плагины** - Расширение функциональности
-- **Статистика** - Анализ использования хранилища
-- **Межвкладковое взаимодействие** - Синхронизация между вкладками
-- **Групповые операции** - Массовые чтение/запись
-- **Продвинутые операции** - Работа с массивами, инкремент, слияние объектов
+### Основные возможности
 
-## Установка
-
-
-
-## Инициализация
-
-### Базовое использование
+#### 1. **Инициализация**
 ```javascript
-// Создание экземпляра
-const storage = new STlocal();
-
-// Установка значения
-storage.set('theme', 'dark');
-
-// Получение значения
-const theme = storage.get('theme'); // 'dark'
+const storage = new STlocal(namespace, options);
 ```
-
-### Создание пространства имен
-```javascript
-const userStorage = new STlocal('user_', {
-  defaultTTL: 86400, // Время жизни по умолчанию (24 часа)
-  encryptionKey: 'secret123' // Ключ шифрования
-});
-
-// Сохранение данных с шифрованием
-userStorage.set('profile', {
-  name: 'Alex',
-  email: 'alex@example.com'
-});
-```
-
-## Основные методы
-
-### `set(key, value, options)`
-Сохранение данных в хранилище
 
 **Параметры:**
-- `key` - Ключ для сохранения
-- `value` - Значение (любой тип данных)
-- `options` - Дополнительные параметры:
-  - `ttl` - Время жизни в секундах
-  - `encrypt` - Шифровать данные
-  - `silent` - Не генерировать события
+- `namespace` (String): Префикс для всех ключей
+- `options` (Object):
+  - `namespaceSeparator` (String, по умолчанию ':'): Разделитель пространств имен
+  - `defaultTTL` (Number): Время жизни записей в секундах
+  - `encryptionKey` (String): Ключ для шифрования данных
+  - `autoCleanup` (Boolean, true): Автоматическая очистка просроченных записей
+  - `crossTabSync` (Boolean, true): Синхронизация между вкладками
+  - `storageType` ('local'|'session'): Тип хранилища
+  - `serializer/deserializer` (Function): Кастомные функции сериализации
+  - `validator` (Function): Функция валидации данных
+  - `cryptoEngine` ('simple'|'aes'): Алгоритм шифрования
 
+---
+
+### Основные методы
+
+#### 2. **CRUD операции**
 ```javascript
-// Сохранить данные на 1 час
-storage.set('session', { token: 'abc123' }, { ttl: 3600 });
-```
+// Запись данных
+storage.set('key', value, { ttl: 3600, encrypt: true });
 
-### `get(key, defaultValue, options)`
-Получение данных из хранилища
+// Чтение данных
+const value = storage.get('key', defaultValue);
 
-**Параметры:**
-- `key` - Ключ для получения
-- `defaultValue` - Значение по умолчанию, если ключ отсутствует
-- `options` - Дополнительные параметры:
-  - `skipExpiration` - Пропустить проверку срока действия
+// Удаление данных
+storage.remove('key');
 
-```javascript
-const session = storage.get('session', {});
-```
+// Проверка наличия ключа
+storage.has('key');
 
-### `remove(key, options)`
-Удаление данных по ключу
+// Получение всех ключей
+const keys = storage.keys();
 
-```javascript
-storage.remove('session');
-```
-
-### `clear(options)`
-Очистка всех данных в пространстве имен
-
-```javascript
+// Очистка хранилища
 storage.clear();
 ```
 
-### `has(key)`
-Проверка существования ключа
+---
 
+### Расширенные операции
+
+#### 3. **Операции с коллекциями**
 ```javascript
-if (storage.has('session')) {
-  // Действия с сессией
-}
+// Пакетная запись
+storage.setMany({ key1: value1, key2: value2 });
+
+// Пакетное чтение
+const values = storage.getMany(['key1', 'key2']);
+
+// Пакетное удаление
+storage.removeMany(['key1', 'key2']);
 ```
 
-## Расширенные методы
-
-### Работа с TTL
+#### 4. **Операции с массивами**
 ```javascript
-// Установка TTL для существующего ключа
-storage.setTTL('session', 7200); // 2 часа
-
-// Получение оставшегося времени жизни
-const remaining = storage.getRemainingTTL('session'); // в миллисекундах
+storage.push('cart', newItem);
+storage.pop('cart');
+storage.unshift('notifications', newNotification);
+storage.shift('notifications');
 ```
 
-### Групповые операции
+#### 5. **Операции с числами и булевыми значениями**
 ```javascript
-// Массовая запись
-storage.setMany({
-  preferences: { theme: 'dark', fontSize: 16 },
-  lastVisited: Date.now()
+storage.increment('counter', 5);
+storage.decrement('counter', 3);
+storage.toggle('darkMode');
+```
+
+---
+
+### Управление временем жизни (TTL)
+
+#### 6. **Методы TTL**
+```javascript
+// Установка времени жизни
+storage.setTTL('session', 1800);
+
+// Получение оставшегося времени (мс)
+const remaining = storage.getRemainingTTL('session');
+
+// Получение даты истечения
+const expires = storage.getExpirationDate('session');
+
+// Ручная очистка просроченных данных
+const removedCount = storage.cleanupExpired();
+```
+
+---
+
+### Безопасность
+
+#### 7. **Шифрование данных**
+```javascript
+// Установка ключа шифрования
+storage.encryptWith('my-secret-key');
+
+// Выбор алгоритма шифрования
+storage.setCryptoEngine('aes'); // или 'simple'
+
+// Шифрование отдельной записи
+storage.set('token', sensitiveData, { encrypt: true });
+```
+
+---
+
+### Пространства имен
+
+#### 8. **Работа с пространствами имен**
+```javascript
+// Создание подпространства
+const userStorage = storage.namespace('user');
+
+// Работа в пространстве
+userStorage.set('preferences', userPrefs);
+userStorage.get('preferences');
+```
+
+---
+
+### Система событий
+
+#### 9. **Подписка на события**
+```javascript
+storage.on('change', (key, value) => {
+  console.log(`Изменен ключ ${key}:`, value);
 });
 
-// Массовое чтение
-const { preferences, lastVisited } = storage.getMany([
-  'preferences', 
-  'lastVisited'
-]);
-```
-
-### Работа с массивами
-```javascript
-// Добавление в массив
-storage.push('logs', 'User logged in');
-
-// Удаление последнего элемента
-const lastLog = storage.pop('logs');
-```
-
-### Статистика
-```javascript
-// Размер всех данных в хранилище
-const totalSize = storage.getSize();
-
-// Размер конкретного ключа
-const keySize = storage.getSize('logs');
-```
-
-## Система событий
-
-Библиотека предоставляет мощную систему событий для реагирования на изменения данных.
-
-### Подписка на события
-```javascript
-// Изменение конкретного ключа
-storage.on('change:theme', (newTheme) => {
-  document.body.className = newTheme;
+storage.on('change:cart', (value) => {
+  console.log('Корзина изменена:', value);
 });
 
-// Любое изменение в хранилище
-storage.on('change', (key, newValue, oldValue) => {
-  console.log(`Key ${key} changed from`, oldValue, 'to', newValue);
+storage.on('remove', (key, oldValue) => {
+  console.log(`Удален ключ ${key}:`, oldValue);
 });
 
-// Удаление ключа
-storage.on('remove:session', () => {
-  redirectToLogin();
+storage.on('clear', () => {
+  console.log('Хранилище очищено');
 });
 
-// Ошибки
 storage.on('error', (errorInfo) => {
-  console.error('Storage error:', errorInfo);
+  console.error('Ошибка:', errorInfo);
 });
 ```
 
-### Отписка от событий
+---
+
+### Мониторинг изменений
+
+#### 10. **Наблюдение за ключами**
 ```javascript
-const handler = (newValue) => { /* ... */ };
+const unwatch = storage.watch('cart', (newValue, oldValue) => {
+  console.log('Корзина изменилась:', { newValue, oldValue });
+}, 1000);
 
-// Подписка
-storage.on('change:cart', handler);
-
-// Отписка
-storage.off('change:cart', handler);
+// Отмена наблюдения
+unwatch();
 ```
 
-## Система плагинов
+---
 
-STlocal.js поддерживает создание плагинов для расширения функциональности.
+### Статистика и аналитика
 
-### Пример плагина для валидации
+#### 11. **Метрики хранилища**
 ```javascript
-const schemaValidator = (schema) => ({
-  hooks: {
-    beforeSet: ({ key, value }) => {
-      const { error } = schema.validate(value);
-      if (error) throw new Error(`Validation failed for ${key}: ${error.message}`);
-      return { key, value };
-    }
-  }
-});
-
-// Использование плагина
-import Joi from 'joi';
-
-const userSchema = Joi.object({
-  name: Joi.string().required(),
-  email: Joi.string().email().required()
-});
-
-storage.use(schemaValidator(userSchema));
+const stats = storage.getStats();
+/*
+{
+  keys: 15,
+  size: 24576, // в байтах
+  available: 5242880, // доступное место
+  quota: 10485760, // общий лимит
+  namespace: 'app',
+  storageType: 'local'
+}
+*/
 ```
 
-### Пример плагина для логирования
+#### 12. **Размер данных**
+```javascript
+// Размер конкретного ключа
+const keySize = storage.getSize('userData');
+
+// Общий размер хранилища
+const totalSize = storage.getSize();
+```
+
+---
+
+### Резервное копирование
+
+#### 13. **Экспорт и импорт**
+```javascript
+// Создание резервной копии
+const backup = storage.export({
+  includeExpired: true // включать просроченные данные
+});
+
+// Восстановление из резервной копии
+storage.import(backup, {
+  merge: true, // объединить с текущими данными
+  overwrite: false // не перезаписывать существующие ключи
+});
+```
+
+---
+
+### Расширение функционала
+
+#### 14. **Плагины**
 ```javascript
 const loggerPlugin = {
   hooks: {
-    beforeSet: ({ key, value }) => {
-      console.log(`Setting ${key}:`, value);
-      return { key, value };
+    beforeSet: (data) => {
+      console.log(`Запись ${data.key}:`, data.value);
+      return data;
     },
-    afterGet: ({ key, value }) => {
-      console.log(`Getting ${key}:`, value);
-      return { key, value };
+    afterGet: (data) => {
+      console.log(`Чтение ${data.key}:`, data.value);
+      return data;
     }
   }
 };
@@ -230,97 +251,95 @@ const loggerPlugin = {
 storage.use(loggerPlugin);
 ```
 
-## Шифрование данных
-
-Для защиты конфиденциальной информации библиотека поддерживает шифрование.
-
-### Использование шифрования
+#### 15. **Транзакции**
 ```javascript
-// Создание хранилища с шифрованием
-const secureStorage = new STlocal('vault_', {
-  encryptionKey: 'my-strong-password'
-});
-
-// Сохранение с шифрованием
-secureStorage.set('creditCard', '4111 1111 1111 1111');
-
-// Автоматическая расшифровка при чтении
-const card = secureStorage.get('creditCard');
-```
-
-### Смена ключа шифрования
-```javascript
-// Установка нового ключа
-secureStorage.encryptWith('new-stronger-password');
-```
-
-## Межвкладковое взаимодействие
-
-Библиотека автоматически синхронизирует изменения между вкладками браузера.
-
-```javascript
-// Событие сработает при изменении данных из другой вкладки
-storage.on('change', (key, newValue) => {
-  console.log(`Data changed from another tab: ${key} =`, newValue);
+storage.transaction({
+  set: { theme: 'dark', fontSize: 16 },
+  remove: ['tempData']
 });
 ```
 
-## Резервное копирование
+---
 
-### Экспорт данных
+### Особенности работы
+
+#### 16. **Обработка специальных типов**
+Библиотека автоматически обрабатывает:
+- Date
+- Set
+- Map
+- RegExp
+- Blob (через плагины)
+
+#### 17. **Система ошибок**
+Все ошибки генерируют события:
 ```javascript
-// Экспорт всех данных в JSON
-const backup = storage.export();
-```
-
-### Импорт данных
-```javascript
-// Восстановление из резервной копии
-storage.import(backup);
-
-// Импорт с объединением
-storage.import(backup, { merge: true });
-```
-
-## Лучшие практики
-
-1. **Пространства имен** - Всегда используйте пространства имен для изоляции данных разных модулей
-2. **TTL для временных данных** - Устанавливайте время жизни для сессионных данных
-3. **Шифрование конфиденциальных данных** - Всегда шифруйте персональные данные
-4. **Обработка ошибок** - Подписывайтесь на события ошибок
-5. **Статистика** - Регулярно проверяйте размер хранилища
-
-```javascript
-// Пример комплексного использования
-const appStorage = new STlocal('app_', {
-  defaultTTL: 3600,
-  encryptionKey: 'app-secret-key'
-});
-
-appStorage
-  .use(loggerPlugin)
-  .use(schemaValidator(appSchema))
-  .on('error', handleStorageError)
-  .on('change:settings', updateUI);
-  
-appStorage.setMany({
-  user: { id: 42, name: 'Alex' },
-  settings: { theme: 'dark', notifications: true }
+storage.on('error', (errorInfo) => {
+  console.error(`Ошибка в ${errorInfo.operation}`, errorInfo.error);
 });
 ```
 
-## Ограничения безопасности
+#### 18. **Автоочистка**
+При включенной опции `autoCleanup` просроченные записи автоматически удаляются каждые 60 секунд.
 
-Важно! Базовая реализация шифрования в библиотеке использует XOR-шифрование, что подходит только для базовой защиты. Для приложений с высокими требованиями безопасности:
+---
 
-1. Используйте Web Crypto API
-2. Храните ключи шифрования безопасно
-3. Регулярно обновляйте ключи шифрования
-4. Не храните критически важные данные в localStorage
+### Примеры использования
 
-## Заключение
+#### Базовый пример
+```javascript
+const storage = new STlocal('myApp', {
+  defaultTTL: 3600, // 1 час
+  encryptionKey: 'secret123'
+});
 
-STlocal.js предоставляет мощный и удобный интерфейс для работы с localStorage, решая основные проблемы стандартной реализации. Библиотека подходит для широкого спектра задач - от простых веб-приложений до сложных SPA-проектов.
+storage.set('user', { id: 1, name: 'John' }, { ttl: 86400 });
+const user = storage.get('user');
+```
 
+#### Пример с шифрованием
+```javascript
+const secureStorage = new STlocal('vault', {
+  encryptionKey: 'supersecret',
+  cryptoEngine: 'aes'
+});
 
-Для начала работы просто подключите библиотеку и начните использовать расширенные возможности управления данными в браузере!
+secureStorage.set('apiKey', 'ABC-123-XYZ', { encrypt: true });
+const apiKey = secureStorage.get('apiKey');
+```
+
+#### Пример с плагинами
+```javascript
+const expirationChecker = {
+  hooks: {
+    beforeGet: (data) => {
+      if (data.meta.expires && data.meta.expires < Date.now()) {
+        console.warn(`Ключ ${data.key} просрочен!`);
+      }
+      return data;
+    }
+  }
+};
+
+storage.use(expirationChecker);
+```
+
+---
+
+### Ограничения
+1. Размер хранилища ограничен 5-10 МБ
+2. Шифрование AES требует HTTPS
+3. Сложные объекты сериализуются в JSON
+4. Для работы в IE11 необходимы полифиллы
+
+### Заключение
+STlocal.js предоставляет мощный инструментарий для работы с клиентским хранилищем, включая:
+- Управление пространствами имен
+- Автоматическую очистку
+- Шифрование данных
+- Межвкладковую синхронизацию
+- Расширяемую систему плагинов
+- Детальную статистику
+- Резервное копирование
+
+Библиотека идеально подходит для создания сложных клиентских приложений, требующих надежного и безопасного хранения данных.

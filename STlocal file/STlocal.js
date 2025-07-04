@@ -713,4 +713,204 @@ class STlocal {
   // Вспомогательные методы
   // =====================
   
+  /**
+   * Создает экземпляр с пространством имен
+   * @param {string} ns - Пространство имен
+   * @param {Object} [options={}] - Настройки для нового экземпляра
+   * @returns {STlocal} Новый экземпляр
+   */
+  namespace(ns, options = {}) {
+    return new STlocal(`${this.namespace}${ns}`, {
+      ...options,
+      defaultTTL: this.defaultTTL,
+      encryptionKey: this.encryptionKey
+    });
+  }
   
+  // =====================
+  // Приватные методы
+  // =====================
+  
+  /** Инициализирует экземпляр */
+  _init() {
+    // Проверка доступности хранилища
+    this.storageAvailable = this._checkStorageSupport();
+    
+    // Автоматическая очистка при инициализации
+    if (this.autoCleanup) {
+      this.cleanupExpired();
+      // Регулярная очистка
+      this.cleanupInterval = setInterval(() => {
+        this.cleanupExpired();
+      }, 60 * 1000); // Каждую минуту
+    }
+    
+    // Синхронизация между вкладками
+    if (this.storageAvailable && this.crossTabSync) {
+      window.addEventListener('storage', this._handleStorageEvent.bind(this));
+    }
+  }
+  
+  /** Проверяет доступность localStorage */
+  _checkStorageSupport() {
+    try {
+      const testKey = '__stlocal_test__';
+      localStorage.setItem(testKey, testKey);
+      localStorage.removeItem(testKey);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  /** Добавляет префикс пространства имен к ключу */
+  _prefixKey(key) {
+    return `${this.namespace}${key}`;
+  }
+  
+  /** Проверяет принадлежность ключа пространству имен */
+  _isNamespacedKey(key) {
+    return this.namespace ? key.startsWith(this.namespace) : true;
+  }
+  
+  /** Шифрует данные */
+  _encrypt(data) {
+    if (!this.encryptionKey) return data;
+    
+    try {
+      let result = '';
+      for (let i = 0; i < data.length; i++) {
+        const charCode = data.charCodeAt(i) ^ 
+          this.encryptionKey.charCodeAt(i % this.encryptionKey.length);
+        result += String.fromCharCode(charCode);
+      }
+      return 'ENC:' + btoa(result);
+    } catch (e) {
+      return data;
+    }
+  }
+  
+  /** Дешифрует данные */
+  _decrypt(data) {
+    if (!this.encryptionKey) return data;
+    
+    try {
+      const decoded = atob(data);
+      let result = '';
+      for (let i = 0; i < decoded.length; i++) {
+        const charCode = decoded.charCodeAt(i) ^ 
+          this.encryptionKey.charCodeAt(i % this.encryptionKey.length);
+        result += String.fromCharCode(charCode);
+      }
+      return result;
+    } catch (e) {
+      return data;
+    }
+  }
+  
+  /** Оценивает доступное пространство */
+  _getAvailableSpace() {
+    if (!this.storageAvailable) return 0;
+    
+    try {
+      const testKey = '__stlocal_space_test__';
+      let data = '';
+      
+      // Заполняем хранилище до лимита
+      for (let i = 0; i < 100; i++) {
+        data += new Array(10240).join('x'); // 10KB
+        try {
+          localStorage.setItem(testKey, data);
+        } catch (e) {
+          localStorage.removeItem(testKey);
+          return data.length - 10240;
+        }
+      }
+      
+      localStorage.removeItem(testKey);
+      return data.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+  
+  /** Получает квоту хранилища */
+  _getStorageQuota() {
+    return 5 * 1024 * 1024; // Стандартная квота 5MB
+  }
+  
+  /** Генерирует события */
+  _triggerEvent(event, ...args) {
+    if (this.eventListeners[event]) {
+      // Копия обработчиков для безопасного выполнения
+      const listeners = [...this.eventListeners[event]];
+      for (const cb of listeners) {
+        try {
+          cb(...args);
+        } catch (e) {
+          this._handleError(e, 'event', event);
+        }
+      }
+    }
+  }
+  
+  /** Обрабатывает события хранилища из других вкладок */
+  _handleStorageEvent(event) {
+    if (!event.key || !this._isNamespacedKey(event.key)) return;
+    
+    const key = event.key.substring(this.namespace.length);
+    
+    if (event.newValue === null) {
+      // Событие удаления
+      this._triggerEvent('remove', key, event.oldValue);
+      this._triggerEvent(`remove:${key}`, event.oldValue);
+    } else if (event.newValue !== event.oldValue) {
+      // Событие изменения
+      try {
+        const newValue = this.get(key);
+        this._triggerEvent('change', key, newValue, event.oldValue);
+        this._triggerEvent(`change:${key}`, newValue, event.oldValue);
+      } catch (e) {
+        // Игнорируем ошибки
+      }
+    }
+  }
+  
+  /** Выполняет плагины для конкретного хука */
+  _runPlugins(hook, data) {
+    let result = { ...data };
+    for (const plugin of this.plugins) {
+      if (plugin.hooks && typeof plugin.hooks[hook] === 'function') {
+        const newResult = plugin.hooks[hook](result);
+        if (newResult) {
+          result = newResult;
+        }
+      }
+    }
+    return result;
+  }
+  
+  /** Обрабатывает и сообщает об ошибках */
+  _handleError(error, operation, key = null) {
+    const errorInfo = {
+      operation,
+      key,
+      error: error.message,
+      namespace: this.namespace,
+      timestamp: Date.now()
+    };
+    
+    this._triggerEvent('error', errorInfo);
+  }
+}
+
+// Экспорт класса
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = STlocal;
+} else if (typeof define === 'function' && define.amd) {
+  define([], function() {
+    return STlocal;
+  });
+} else {
+  window.STlocal = STlocal;
+}

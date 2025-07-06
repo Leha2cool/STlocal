@@ -1,4 +1,6 @@
+<a href="https://ibb.co/1fgJVqPQ"><img src="https://i.ibb.co/svfJSwNR/STlocal.jpg" alt="STlocal" border="0"></a>
 ## STlocal.js - Продвинутая библиотека для работы с localStorage
+
 
 **Версия:** 3.0.0  
 **Дата:** 2025-07-04  
@@ -16,6 +18,11 @@ STlocal.js - это современная библиотека для рабо�
 - Резервное копирование
 
 ---
+
+### Подключение
+```html
+<scrpt src="https://cdn.jsdelivr.net/gh/Leha2cool/STlocal.js@main/STlocal%20file/STlocal%403.0.0.js"></scrpt>
+```
 
 ### Основные возможности
 

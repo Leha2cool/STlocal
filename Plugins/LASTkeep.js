@@ -1,12 +1,9 @@
 /**
  * LASTkeep.js - Плагин для STlocal.js
- * Версия: 1.4.0
- * Дата: 2025-07-04
+ * Версия: 1.6.0
+ * Дата: 2025-07-06
  * GitHub: https://github.com/Leha2cool
- *
- *
- *
- *
+ * 
  * Комбинирует функции:
  * - Аналитики хранилища
  * - Сжатия данных
@@ -18,13 +15,14 @@ class LASTkeep {
     this.defaultOptions = {
       compression: {
         enabled: true,
-        algorithm: 'lz', // lz, gzip, none
-        minSize: 100 // минимальный размер для сжатия (байт)
+        algorithm: 'lz', // lz, base64, none
+        minSize: 100 // минимальный размер для сжатия (символов)
       },
       analytics: {
         enabled: true,
         trackFrequency: true,
-        trackSizeChanges: true
+        trackSizeChanges: true,
+        saveInterval: 60000 // интервал сохранения аналитики (мс)
       },
       accessControl: {
         enabled: true,
@@ -38,25 +36,52 @@ class LASTkeep {
     };
     
     // Слияние пользовательских настроек
-    this.options = { ...this.defaultOptions, ...options };
+    this.options = { 
+      ...this.defaultOptions, 
+      ...options,
+      compression: { 
+        ...this.defaultOptions.compression, 
+        ...(options.compression || {}) 
+      },
+      analytics: { 
+        ...this.defaultOptions.analytics, 
+        ...(options.analytics || {}) 
+      },
+      accessControl: { 
+        ...this.defaultOptions.accessControl, 
+        ...(options.accessControl || {}) 
+      }
+    };
+    
     this.storage = null;
     this.analyticsData = {
       operations: { get: 0, set: 0, remove: 0 },
       keyAccess: {},
       sizeHistory: []
     };
+    this.analyticsTimer = null;
   }
   
   /**
    * Инициализация плагина
-   * @param {STlocal} storage - Экземпляр STlocal
+   * @param {Object} storage - Экземпляр STlocal
    */
   init(storage) {
+    if (!storage || typeof storage.get !== 'function') {
+      throw new Error('Invalid storage instance provided');
+    }
+    
     this.storage = storage;
     
-    // Инициализация аналитики
+    // Загрузка сохраненных аналитических данных
     if (this.options.analytics.enabled) {
-      this._initAnalytics();
+      const savedData = this.storage.get('LASTkeep_analytics');
+      if (savedData && typeof savedData === 'object') {
+        this.analyticsData = savedData;
+      }
+      
+      // Запуск периодического сохранения
+      this._startAnalytics();
     }
     
     // Регистрация обработчиков
@@ -64,25 +89,26 @@ class LASTkeep {
     
     // Начальная запись статистики
     this._recordSize();
+    
+    return this;
   }
   
   /**
-   * Инициализация системы аналитики
+   * Запуск системы аналитики
    * @private
    */
-  _initAnalytics() {
-    // Периодическая запись размера хранилища
-    setInterval(() => this._recordSize(), 60000); // Каждую минуту
+  _startAnalytics() {
+    // Остановка предыдущего таймера
+    if (this.analyticsTimer) {
+      clearInterval(this.analyticsTimer);
+    }
     
-    // Сохранение аналитических данных
-    this.storage.on('change:LASTkeep_analytics', (data) => {
-      this.analyticsData = data;
-    });
-    
-    // Восстановление данных при наличии
-    const savedData = this.storage.get('LASTkeep_analytics');
-    if (savedData) {
-      this.analyticsData = savedData;
+    // Запуск нового таймера
+    if (this.options.analytics.enabled) {
+      this.analyticsTimer = setInterval(() => {
+        this._recordSize();
+        this._saveAnalytics();
+      }, this.options.analytics.saveInterval);
     }
   }
   
@@ -91,13 +117,19 @@ class LASTkeep {
    * @private
    */
   _registerHooks() {
+    if (!this.storage || typeof this.storage.use !== 'function') {
+      console.warn('Storage instance does not support hooks');
+      return;
+    }
+    
     this.storage.use({
       hooks: {
         beforeSet: this._beforeSet.bind(this),
         afterSet: this._afterSet.bind(this),
         beforeGet: this._beforeGet.bind(this),
         afterGet: this._afterGet.bind(this),
-        beforeRemove: this._beforeRemove.bind(this)
+        beforeRemove: this._beforeRemove.bind(this),
+        afterRemove: this._afterRemove.bind(this)
       }
     });
   }
@@ -106,7 +138,7 @@ class LASTkeep {
    * Хук перед сохранением данных
    * @private
    */
-  _beforeSet({ key, value, options }) {
+  _beforeSet({ key, value, options = {} }) {
     // Проверка прав доступа
     if (this.options.accessControl.enabled) {
       const role = options.role || this.options.accessControl.defaultRole;
@@ -132,7 +164,7 @@ class LASTkeep {
    * Хук после сохранения данных
    * @private
    */
-  _afterSet({ key, value, options }) {
+  _afterSet({ key }) {
     // Обновление аналитики
     if (this.options.analytics.enabled) {
       this.analyticsData.operations.set++;
@@ -141,6 +173,9 @@ class LASTkeep {
         this.analyticsData.keyAccess[key] = 
           (this.analyticsData.keyAccess[key] || 0) + 1;
       }
+      
+      this._recordSize();
+      this._saveAnalytics();
     }
   }
   
@@ -148,7 +183,7 @@ class LASTkeep {
    * Хук перед получением данных
    * @private
    */
-  _beforeGet({ key, options }) {
+  _beforeGet({ key, options = {} }) {
     // Проверка прав доступа
     if (this.options.accessControl.enabled) {
       const role = options.role || this.options.accessControl.defaultRole;
@@ -164,10 +199,16 @@ class LASTkeep {
    * Хук после получения данных
    * @private
    */
-  _afterGet({ key, value, meta }) {
+  _afterGet({ key, value, meta = {} }) {
+    let result = value;
+    
     // Распаковка данных
-    if (meta && meta.compressed) {
-      value = this._decompress(value);
+    if (meta.compressed) {
+      try {
+        result = this._decompress(value);
+      } catch (error) {
+        console.error(`Decompression error for key ${key}:`, error);
+      }
     }
     
     // Обновление аналитики
@@ -180,14 +221,14 @@ class LASTkeep {
       }
     }
     
-    return { key, value, meta };
+    return { key, value: result, meta };
   }
   
   /**
    * Хук перед удалением данных
    * @private
    */
-  _beforeRemove({ key, options }) {
+  _beforeRemove({ key, options = {} }) {
     // Проверка прав доступа
     if (this.options.accessControl.enabled) {
       const role = options.role || this.options.accessControl.defaultRole;
@@ -200,10 +241,29 @@ class LASTkeep {
   }
   
   /**
+   * Хук после удаления данных
+   * @private
+   */
+  _afterRemove({ key }) {
+    // Обновление аналитики
+    if (this.options.analytics.enabled) {
+      this.analyticsData.operations.remove++;
+      
+      if (this.options.analytics.trackFrequency) {
+        delete this.analyticsData.keyAccess[key];
+      }
+      
+      this._recordSize();
+      this._saveAnalytics();
+    }
+  }
+  
+  /**
    * Проверка прав доступа
    * @private
    */
   _checkPermission(role, action, key) {
+    // Получение конфигурации роли
     const roleConfig = this.options.accessControl.roles[role];
     if (!roleConfig) return false;
     
@@ -212,6 +272,7 @@ class LASTkeep {
       return false;
     }
     
+    // Проверка пермиссий
     return roleConfig[action] === true;
   }
   
@@ -220,11 +281,12 @@ class LASTkeep {
    * @private
    */
   _shouldCompress(value) {
+    // Сжатие только для строк
     if (typeof value !== 'string') return false;
     
+    // Проверка минимального размера
     if (this.options.compression.minSize > 0) {
-      const size = new Blob([value]).size;
-      return size >= this.options.compression.minSize;
+      return value.length >= this.options.compression.minSize;
     }
     
     return true;
@@ -238,8 +300,8 @@ class LASTkeep {
     switch (this.options.compression.algorithm) {
       case 'lz':
         return this._lzCompress(data);
-      case 'gzip':
-        return this._gzipCompress(data);
+      case 'base64':
+        return this._base64Compress(data);
       default:
         return data;
     }
@@ -253,8 +315,8 @@ class LASTkeep {
     switch (this.options.compression.algorithm) {
       case 'lz':
         return this._lzDecompress(data);
-      case 'gzip':
-        return this._gzipDecompress(data);
+      case 'base64':
+        return this._base64Decompress(data);
       default:
         return data;
     }
@@ -265,7 +327,8 @@ class LASTkeep {
    * @private
    */
   _lzCompress(data) {
-    // Упрощенная реализация LZ-сжатия
+    if (!data) return '';
+    
     let result = '';
     let dict = {};
     let current = '';
@@ -277,13 +340,23 @@ class LASTkeep {
       if (dict[next] !== undefined) {
         current = next;
       } else {
-        result += dict[current] || current;
+        if (current.length > 1) {
+          result += String.fromCharCode(dict[current]);
+        } else {
+          result += current;
+        }
+        
         dict[next] = Object.keys(dict).length + 256;
         current = char;
       }
     }
     
-    result += dict[current] || current;
+    if (current.length > 1) {
+      result += String.fromCharCode(dict[current]);
+    } else {
+      result += current;
+    }
+    
     return result;
   }
   
@@ -292,7 +365,8 @@ class LASTkeep {
    * @private
    */
   _lzDecompress(data) {
-    // Упрощенная реализация LZ-распаковки
+    if (!data) return '';
+    
     let result = '';
     let dict = {};
     let current = '';
@@ -300,18 +374,20 @@ class LASTkeep {
     
     for (let i = 0; i < data.length; i++) {
       const char = data[i];
-      let entry;
+      let entry = '';
       
       if (char.charCodeAt(0) < 256) {
         entry = char;
       } else {
-        entry = dict[char.charCodeAt(0)] || current + current[0];
+        const code = char.charCodeAt(0);
+        entry = dict[code] || (current + current[0]);
       }
       
       result += entry;
       
-      if (current) {
-        dict[nextCode++] = current + entry[0];
+      if (current && nextCode < 65536) {
+        dict[nextCode] = current + entry[0];
+        nextCode++;
       }
       
       current = entry;
@@ -321,24 +397,19 @@ class LASTkeep {
   }
   
   /**
-   * Сжатие GZIP (упрощенное)
+   * Сжатие Base64
    * @private
    */
-  _gzipCompress(data) {
-    // В реальной реализации следует использовать более эффективные алгоритмы
-    return btoa(encodeURIComponent(data).replace(/%../g, (match) => {
-      return String.fromCharCode(parseInt(match.replace(/%/, ''), 16);
-    }));
+  _base64Compress(data) {
+    return btoa(unescape(encodeURIComponent(data)));
   }
   
   /**
-   * Распаковка GZIP (упрощенная)
+   * Распаковка Base64
    * @private
    */
-  _gzipDecompress(data) {
-    return decodeURIComponent(Array.from(atob(data)).map(char => {
-      return '%' + ('00' + char.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
+  _base64Decompress(data) {
+    return decodeURIComponent(escape(atob(data)));
   }
   
   /**
@@ -346,7 +417,9 @@ class LASTkeep {
    * @private
    */
   _recordSize() {
-    if (!this.options.analytics.trackSizeChanges) return;
+    if (!this.options.analytics.enabled || 
+        !this.options.analytics.trackSizeChanges ||
+        !this.storage.getSize) return;
     
     const size = this.storage.getSize();
     this.analyticsData.sizeHistory.push({
@@ -354,7 +427,19 @@ class LASTkeep {
       size
     });
     
-    // Сохранение данных аналитики
+    // Ограничение истории до 1000 записей
+    if (this.analyticsData.sizeHistory.length > 1000) {
+      this.analyticsData.sizeHistory.shift();
+    }
+  }
+  
+  /**
+   * Сохранение аналитических данных
+   * @private
+   */
+  _saveAnalytics() {
+    if (!this.storage.set) return;
+    
     this.storage.set('LASTkeep_analytics', this.analyticsData, {
       ttl: 60 * 60 * 24 * 30 // 30 дней
     });
@@ -372,7 +457,8 @@ class LASTkeep {
     return {
       operations: { ...this.analyticsData.operations },
       totalKeys: Object.keys(this.analyticsData.keyAccess).length,
-      sizeHistory: [...this.analyticsData.sizeHistory]
+      sizeHistory: [...this.analyticsData.sizeHistory],
+      lastUpdated: Date.now()
     };
   }
   
@@ -391,7 +477,7 @@ class LASTkeep {
   /**
    * Добавление новой роли
    * @param {string} role - Название роли
-   * @param {Object} permissions - Права доступа
+   * @param {Object} permissions - Права доступа {read, write, delete}
    */
   addRole(role, permissions) {
     this.options.accessControl.roles[role] = permissions;
@@ -411,6 +497,8 @@ class LASTkeep {
    * @param {Object} permissions - Права доступа
    */
   setKeyPermissions(key, permissions) {
+    if (!this.storage.set) return;
+    
     this.storage.set(`key_permissions:${key}`, permissions, {
       ttl: 60 * 60 * 24 // 24 часа
     });
@@ -422,12 +510,20 @@ class LASTkeep {
    * @returns {Promise<number>} Количество сжатых ключей
    */
   async compressAll() {
-    if (!this.options.compression.enabled) return 0;
+    if (!this.options.compression.enabled || 
+        !this.storage.keys || 
+        !this.storage.get || 
+        !this.storage.set) return 0;
     
     let compressedCount = 0;
     const keys = this.storage.keys();
     
     for (const key of keys) {
+      // Пропускаем системные ключи
+      if (key === 'LASTkeep_analytics' || key.startsWith('key_permissions:')) {
+        continue;
+      }
+      
       const value = this.storage.get(key);
       
       if (this._shouldCompress(value)) {
@@ -454,8 +550,8 @@ class LASTkeep {
     const result = {
       compressed: 0,
       removed: 0,
-      totalBefore: this.storage.getSize(),
-      keysBefore: this.storage.keys().length
+      totalBefore: this.storage.getSize ? this.storage.getSize() : 0,
+      keysBefore: this.storage.keys ? this.storage.keys().length : 0
     };
     
     // Сжатие данных
@@ -464,10 +560,15 @@ class LASTkeep {
     }
     
     // Удаление редко используемых данных
-    if (options.accessThreshold) {
+    if (options.accessThreshold && this.storage.keys && this.storage.remove) {
       const keys = this.storage.keys();
       
       for (const key of keys) {
+        // Пропускаем системные ключи
+        if (key === 'LASTkeep_analytics' || key.startsWith('key_permissions:')) {
+          continue;
+        }
+        
         const accessCount = this.analyticsData.keyAccess[key] || 0;
         if (accessCount < options.accessThreshold) {
           this.storage.remove(key);
@@ -477,12 +578,19 @@ class LASTkeep {
     }
     
     // Удаление по размеру
-    if (options.sizeThreshold) {
+    if (options.sizeThreshold && this.storage.getSize) {
       const currentSize = this.storage.getSize();
       if (currentSize > options.sizeThreshold) {
-        const keys = this.getKeyAccessFrequency();
+        const infrequentKeys = this.getKeyAccessFrequency(Infinity)
+          .filter(item => item.count < (options.accessThreshold || 0))
+          .map(item => item.key);
         
-        for (const { key } of keys) {
+        for (const key of infrequentKeys) {
+          // Пропускаем системные ключи
+          if (key === 'LASTkeep_analytics' || key.startsWith('key_permissions:')) {
+            continue;
+          }
+          
           this.storage.remove(key);
           result.removed++;
           
@@ -493,8 +601,8 @@ class LASTkeep {
       }
     }
     
-    result.totalAfter = this.storage.getSize();
-    result.keysAfter = this.storage.keys().length;
+    result.totalAfter = this.storage.getSize ? this.storage.getSize() : 0;
+    result.keysAfter = this.storage.keys ? this.storage.keys().length : 0;
     
     return result;
   }
@@ -523,7 +631,7 @@ class LASTkeep {
     return {
       summary: {
         totalKeys: stats.totalKeys,
-        totalSize: this.storage.getSize(),
+        totalSize: this.storage.getSize ? this.storage.getSize() : 0,
         totalOperations,
         sizeChange,
         compressionRatio: this._calculateCompressionRatio()
@@ -553,19 +661,17 @@ class LASTkeep {
     };
   }
   
-  // =====================
-  // Вспомогательные методы
-  // =====================
-  
   /**
    * Расчет эффективности сжатия
    * @private
    */
   _calculateCompressionRatio() {
-    if (!this.options.compression.enabled) return 1;
+    if (!this.options.compression.enabled || 
+        !this.storage.keys || 
+        !this.storage.get) return 1;
     
     const compressedKeys = this.storage.keys().filter(key => {
-      const meta = this.storage.getMeta(key);
+      const meta = this.storage.getMeta ? this.storage.getMeta(key) : null;
       return meta && meta.compressed;
     });
     
@@ -575,11 +681,11 @@ class LASTkeep {
     let compressedSize = 0;
     
     for (const key of compressedKeys) {
-      const value = this.storage.get(key, null, { skipDecompression: true });
-      const decompressed = this._decompress(value);
+      const value = this.storage.get(key);
+      const rawValue = this.storage.get(key, null, { skipDecompression: true });
       
-      originalSize += new Blob([decompressed]).size;
-      compressedSize += new Blob([value]).size;
+      originalSize += value.length;
+      compressedSize += rawValue.length;
     }
     
     return originalSize > 0 ? compressedSize / originalSize : 1;
@@ -602,7 +708,8 @@ class LASTkeep {
       if (lastSize > avgSize * 1.5) {
         recommendations.push({
           type: 'cleanup',
-          message: 'Размер хранилища значительно превышает средние значения. Рекомендуется очистить неиспользуемые данные.'
+          message: 'Storage size significantly exceeds average values. Cleanup recommended.',
+          severity: 'high'
         });
       }
     }
@@ -612,24 +719,44 @@ class LASTkeep {
     if (compressionRatio > 0.8 && this.options.compression.enabled) {
       recommendations.push({
         type: 'compression',
-        message: `Эффективность сжатия низкая (коэффициент ${compressionRatio.toFixed(2)}). Попробуйте другой алгоритм сжатия.`
+        message: `Low compression efficiency (ratio ${compressionRatio.toFixed(2)}). Try different algorithm.`,
+        severity: 'medium'
       });
     }
     
     // Рекомендация по безопасности
-    const adminKeys = this.storage.keys().filter(key => 
-      this._checkPermission('admin', 'read', key) &&
-      !this._checkPermission('user', 'read', key)
-    );
-    
-    if (adminKeys.length > 0) {
-      recommendations.push({
-        type: 'security',
-        message: `Обнаружены ${adminKeys.length} ключей с повышенными правами доступа. Убедитесь в необходимости таких ограничений.`
-      });
+    if (this.storage.keys) {
+      const adminKeys = this.storage.keys().filter(key => 
+        this._checkPermission('admin', 'read', key) &&
+        !this._checkPermission('user', 'read', key)
+      );
+      
+      if (adminKeys.length > 0) {
+        recommendations.push({
+          type: 'security',
+          message: `Found ${adminKeys.length} keys with elevated access rights. Review permissions.`,
+          severity: 'low'
+        });
+      }
     }
     
     return recommendations;
+  }
+  
+  /**
+   * Остановка плагина и очистка ресурсов
+   */
+  destroy() {
+    // Остановка таймера аналитики
+    if (this.analyticsTimer) {
+      clearInterval(this.analyticsTimer);
+      this.analyticsTimer = null;
+    }
+    
+    // Сохранение финальных аналитических данных
+    if (this.options.analytics.enabled) {
+      this._saveAnalytics();
+    }
   }
 }
 

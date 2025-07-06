@@ -1,261 +1,240 @@
-# Плагин LASTkeep.js для STlocal.js
+### Документация для плагина LASTkeep.js (v1.5.0)
 
-**LASTkeep** (Local Advanced Storage Toolkit with Keep-alive features, Enhanced Efficiency & Performance) - это мощный плагин, расширяющий функционал библиотеки STlocal.js. Он объединяет три ключевые возможности: аналитику хранилища, сжатие данных и контроль доступа, предоставляя комплексное решение для профессиональной работы с localStorage.
+LASTkeep.js — расширение для STlocal.js, добавляющее функции аналитики хранилища, сжатия данных и контроля доступа. Плагин оптимизирует работу с хранилищем, обеспечивает безопасность и предоставляет детальную статистику использования.
 
-## Основные возможности
+---
 
-### 1. Аналитика хранилища
-- **Мониторинг операций**: Точный учет операций чтения/записи/удаления
-- **Частота доступа**: Определение самых популярных ключей
-- **История размеров**: Отслеживание изменения размера хранилища во времени
-- **Визуализация данных**: Генерация отчетов с графиками и рекомендациями
-- **Профилирование**: Анализ эффективности использования хранилища
-
-### 2. Сжатие данных
-- **Алгоритмы сжатия**: Поддержка LZ и GZIP (упрощенные реализации)
-- **Адаптивное сжатие**: Автоматическое определение необходимости сжатия
-- **Пакетная обработка**: Массовое сжатие всех данных одним вызовом
-- **Прозрачная работа**: Автоматическое сжатие/распаковка без участия пользователя
-- **Расчет эффективности**: Статистика коэффициента сжатия
-
-### 3. Контроль доступа
-- **Ролевая модель**: Гибкая система ролей (admin, user, guest)
-- **Права доступа**: Тонкая настройка прав для каждой операции
-- **Ключевые политики**: Специальные права для системных ключей
-- **Динамическое управление**: Добавление/удаление ролей в реальном времени
-- **Защита данных**: Предотвращение несанкционированного доступа
-
-## Документация
-
-### Инициализация плагина
-
+#### **1. Установка**
 ```javascript
-const storage = new STlocal('app_');
-const lastkeep = new LASTkeep({
+import LASTkeep from 'lastkeep-plugin';
+
+const keeper = new LASTkeep({
+  // Конфигурация (опционально)
+});
+keeper.init(storageInstance); // Инициализация с экземпляром STlocal
+```
+
+---
+
+#### **2. Конфигурация**
+```javascript
+const options = {
   compression: {
-    enabled: true,
-    algorithm: 'lz', // 'lz' или 'gzip'
-    minSize: 100     // минимальный размер данных для сжатия (байт)
+    enabled: true,      // Включить сжатие
+    algorithm: 'lz',    // 'lz', 'base64', 'none'
+    minSize: 100        // Минимальная длина для сжатия (символы)
   },
   analytics: {
-    enabled: true,
-    trackFrequency: true,
-    trackSizeChanges: true
+    enabled: true,      // Сбор аналитики
+    trackFrequency: true, // Отслеживать частоту обращений
+    trackSizeChanges: true, // Запись истории размера
+    saveInterval: 60000 // Интервал автосохранения (мс)
   },
   accessControl: {
-    enabled: true,
-    defaultRole: 'user',
-    roles: {
+    enabled: true,      // Контроль доступа
+    defaultRole: 'user', // Роль по умолчанию
+    roles: {            // Кастомные роли
       admin: { read: true, write: true, delete: true },
-      user: { read: true, write: true, delete: false },
-      guest: { read: true, write: false, delete: false }
+      user: { read: true, write: true, delete: false }
     }
   }
-});
-
-storage.use(lastkeep);
+};
 ```
 
-### Методы аналитики
+---
 
-#### `getStats()`
-Возвращает общую статистику операций
+#### **3. Основные методы API**
 
-**Возвращает:**
-```typescript
-{
-  operations: {
-    get: number,   // количество операций чтения
-    set: number,   // количество операций записи
-    remove: number // количество операций удаления
-  },
-  totalKeys: number, // общее количество ключей
-  sizeHistory: Array<{ timestamp: number, size: number }> // история изменений размера
+##### **Инициализация**
+```javascript
+keeper.init(storage: STlocal): void
+```
+- **storage**: Экземпляр STlocal.js
+- **Обязателен** для работы плагина.
+
+---
+
+##### **Управление ролями**
+```javascript
+// Добавить роль
+keeper.addRole(role: string, permissions: {
+  read: boolean,
+  write: boolean,
+  delete: boolean
+}): void
+
+// Удалить роль
+keeper.removeRole(role: string): void
+```
+Пример:
+```javascript
+keeper.addRole('moderator', { read: true, write: true, delete: false });
+```
+
+---
+
+##### **Управление правами для ключей**
+```javascript
+keeper.setKeyPermissions(key: string, permissions: {
+  read: boolean,
+  write: boolean,
+  delete: boolean
+}): void
+```
+Устанавливает особые права для ключа (хранится в `key_permissions:key`).
+
+---
+
+##### **Сбор статистики**
+```javascript
+// Общая статистика
+const stats = keeper.getStats(): {
+  operations: { get: number, set: number, remove: number },
+  totalKeys: number,
+  sizeHistory: Array<{ timestamp: number, size: number }>
 }
-```
 
-#### `getKeyAccessFrequency(limit = 10)`
-Возвращает список ключей, отсортированный по частоте доступа
-
-**Параметры:**
-- `limit` - количество возвращаемых ключей (по умолчанию 10)
-
-**Возвращает:**
-```typescript
-Array<{ key: string, count: number }>
-```
-
-#### `generateReport()`
-Генерирует подробный отчет об использовании хранилища
-
-**Возвращает:**
-```typescript
-{
-  summary: {
-    totalKeys: number,
-    totalSize: number,
-    totalOperations: number,
-    sizeChange: number, // изменение размера за период
-    compressionRatio: number // коэффициент сжатия
-  },
-  operations: {
-    get: { count: number, percentage: number },
-    set: { count: number, percentage: number },
-    remove: { count: number, percentage: number }
-  },
-  topKeys: Array<{ key: string, count: number }>, // топ ключей по частоте доступа
-  recommendations: Array<{ type: string, message: string }> // рекомендации
-}
-```
-
-### Методы сжатия данных
-
-#### `compressAll()`
-Применяет сжатие ко всем данным в хранилище, которые соответствуют условиям сжатия
-
-**Возвращает:**
-`Promise<number>` - количество сжатых ключей
-
-#### `optimizeStorage(options)`
-Выполняет оптимизацию хранилища: сжатие данных и удаление неиспользуемых ключей
-
-**Параметры:**
-```typescript
-{
-  sizeThreshold?: number,   // максимальный допустимый размер хранилища (байт)
-  accessThreshold?: number  // минимальное количество обращений для сохранения ключа
-}
-```
-
-**Возвращает:**
-```typescript
-Promise<{
-  compressed: number,    // количество сжатых ключей
-  removed: number,       // количество удаленных ключей
-  totalBefore: number,   // общий размер до оптимизации
-  totalAfter: number,    // общий размер после оптимизации
-  keysBefore: number,    // количество ключей до оптимизации
-  keysAfter: number      // количество ключей после оптимизации
+// Топ ключей по обращениям
+const topKeys = keeper.getKeyAccessFrequency(limit: number = 10): Array<{
+  key: string,
+  count: number
 }>
 ```
 
-### Методы контроля доступа
+---
 
-#### `addRole(role, permissions)`
-Добавляет новую роль
-
-**Параметры:**
-- `role` - название роли
-- `permissions` - объект с разрешениями:
-  ```typescript
-  { read: boolean, write: boolean, delete: boolean }
-  ```
-
-#### `removeRole(role)`
-Удаляет роль
-
-**Параметры:**
-- `role` - название роли для удаления
-
-#### `setKeyPermissions(key, permissions)`
-Устанавливает особые разрешения для конкретного ключа
-
-**Параметры:**
-- `key` - ключ данных
-- `permissions` - объект разрешений (как в addRole)
-
-## Примеры использования
-
-### Использование контроля доступа
+##### **Оптимизация хранилища**
 ```javascript
-// Сохраняем данные с указанием роли
-storage.set('user_data', { name: 'Alice' }, { role: 'user' });
+// Сжать все подходящие данные
+const compressedCount = await keeper.compressAll(): Promise<number>
 
-// Пытаемся удалить данные с ролью 'guest' (будет ошибка доступа)
-try {
-  storage.remove('user_data', { role: 'guest' });
-} catch (error) {
-  console.error(error.message); // "Access denied for delete operation on key: user_data"
+// Комплексная оптимизация
+const result = await keeper.optimizeStorage(options: {
+  sizeThreshold?: number,   // Макс. размер (байт)
+  accessThreshold?: number  // Мин. обращения для сохранения
+}): Promise<{
+  compressed: number,
+  removed: number,
+  totalBefore: number,
+  totalAfter: number
+}>
+```
+
+---
+
+##### **Генерация отчета**
+```javascript
+const report = keeper.generateReport(): {
+  summary: {
+    totalKeys: number,
+    totalSize: number,
+    sizeChange: number,
+    compressionRatio: number
+  },
+  operations: { /* проценты операций */ },
+  topKeys: Array<{ key: string, count: number }>,
+  recommendations: Array<{
+    type: 'cleanup' | 'compression' | 'security',
+    message: string,
+    severity: 'low' | 'medium' | 'high'
+  }>
 }
+```
 
-// Добавляем новую роль
-lastkeep.addRole('editor', {
-  read: true,
-  write: true,
-  delete: false
+---
+
+##### **Деинициализация**
+```javascript
+keeper.destroy(): void
+```
+Останавливает сбор аналитики и сохраняет данные.
+
+---
+
+#### **4. Интеграция с STlocal.js**
+Плагин автоматически добавляет хуки для операций:
+- `set`: Сжатие данных, проверка прав записи.
+- `get`: Распаковка данных, проверка прав чтения.
+- `remove`: Проверка прав удаления.
+
+**Пример с ролью:**
+```javascript
+// Запись с проверкой роли
+storage.set('data', { ... }, { role: 'admin' });
+
+// Чтение с проверкой роли
+storage.get('data', null, { role: 'user' });
+```
+
+---
+
+#### **5. Алгоритмы сжатия**
+- **LZ (по умолчанию)**: Эффективен для текста с повторениями.
+- **Base64**: Для бинарных данных или короткого текста.
+- **Отключение**: `algorithm: 'none'`.
+
+> Примечание: Сжимаются только строки длиннее `minSize`.
+
+---
+
+#### **6. Аналитика**
+Данные сохраняются в хранилище каждые 60 сек (ключ `LASTkeep_analytics`):
+```json
+{
+  "operations": { "get": 42, "set": 12, "remove": 3 },
+  "keyAccess": { "user_data": 28, "config": 15 },
+  "sizeHistory": [
+    { "timestamp": 1720245600000, "size": 24576 }
+  ]
+}
+```
+
+---
+
+#### **7. Примеры использования**
+
+**Оптимизация при превышении лимита:**
+```javascript
+// При достижении 5 МБ удалить ключи с < 5 обращений
+await keeper.optimizeStorage({
+  sizeThreshold: 5 * 1024 * 1024,
+  accessThreshold: 5
 });
+```
 
-// Устанавливаем особые права для ключа
-lastkeep.setKeyPermissions('admin_settings', {
+**Отчет для администратора:**
+```javascript
+setInterval(() => {
+  const report = keeper.generateReport();
+  if (report.recommendations.some(r => r.severity === 'high')) {
+    alert('Storage critical!');
+  }
+}, 86400000); // Ежедневно
+```
+
+**Кастомные права для ключа:**
+```javascript
+keeper.setKeyPermissions('audit_log', {
   read: false,
   write: true,
   delete: false
 });
 ```
 
-### Работа со сжатием данных
-```javascript
-// Сохраняем большой массив данных
-const largeData = new Array(10000).fill({ value: Math.random() });
-storage.set('big_data', largeData);
+---
 
-// Принудительно сжимаем все данные
-lastkeep.compressAll().then(count => {
-  console.log(`Сжато ${count} ключей`);
-  
-  // Оптимизируем хранилище
-  lastkeep.optimizeStorage({
-    sizeThreshold: 500 * 1024, // 500KB
-    accessThreshold: 5         // удалить ключи с < 5 обращений
-  }).then(result => {
-    console.log(`Освобождено ${result.totalBefore - result.totalAfter} байт`);
-  });
-});
-```
+#### **8. Ограничения**
+- Системные ключи (начинаются с `system_`) доступны только роли `admin`.
+- Сжатие применяется только к строкам.
+- История размеров хранится до 1000 записей.
 
-### Аналитика и отчеты
-```javascript
-// Получаем статистику
-const stats = lastkeep.getStats();
-console.log('Всего операций записи:', stats.operations.set);
+---
 
-// Получаем самые популярные ключи
-const topKeys = lastkeep.getKeyAccessFrequency(5);
-console.log('Топ-5 ключей:', topKeys);
+#### **9. Совместимость**
+- Требует STlocal.js v3.0+
+- Поддерживает браузеры: Chrome 58+, Firefox 55+, Safari 12+.
 
-// Генерируем полный отчет
-const report = lastkeep.generateReport();
-console.log('Отчет об использовании хранилища:', report);
+---
 
-// Выводим рекомендации
-report.recommendations.forEach(rec => {
-  console.log(`[${rec.type}] ${rec.message}`);
-});
-```
-
-## Рекомендации по использованию
-
-1. **Для больших данных** используйте алгоритм `gzip` для лучшего сжатия
-2. **Настройте роли** на этапе инициализации приложения
-3. **Регулярно вызывайте `optimizeStorage()`** для поддержания хранилища в оптимальном состоянии
-4. **Мониторьте отчеты** для выявления узких мест в использовании хранилища
-5. **Используйте системные ключи** (с префиксом `system_`) для важных данных с ограниченным доступом
-6. **Настройте минимальный размер сжатия** под ваши нужды для баланса производительности
-
-## Ограничения
-
-1. Реализации LZ и GZIP являются упрощенными и не заменяют полноценные алгоритмы сжатия
-2. Для критически важных приложений рекомендуется использовать дополнительные механизмы безопасности
-3. Аналитика хранилища требует дополнительных ресурсов, отключайте её при работе с большими объемами данных
-4. Система контроля доступа не заменяет серверную аутентификацию
-
-## Заключение
-
-LASTkeep.js превращает STlocal.js в профессиональный инструмент для работы с localStorage, добавляя мощные функции аналитики, оптимизации и безопасности. Этот плагин особенно полезен для:
-
-- Приложений с большими объемами данных в localStorage
-- Систем с требованиями к безопасности данных
-- Проектов, где важно отслеживать использование хранилища
-- Приложений с разными уровнями доступа пользователей
-
-Используя LASTkeep.js, вы получаете комплексное решение для управления данными в браузере с минимальными затратами на интеграцию и максимальной отдачей.
+[GitHub](https://github.com/Leha2cool) | [Документация STlocal.js](https://stlocal-docs.ru)  
+© 2025, Алексей Фролов (Leha2cool)

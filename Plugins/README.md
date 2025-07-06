@@ -5,13 +5,8 @@ LASTkeep.js — расширение для STlocal.js, добавляющее �
 ---
 
 #### **1. Установка**
-```javascript
-import LASTkeep from 'lastkeep-plugin';
-
-const keeper = new LASTkeep({
-  // Конфигурация (опционально)
-});
-keeper.init(storageInstance); // Инициализация с экземпляром STlocal
+```html
+<script scr="https://cdn.jsdelivr.net/gh/Leha2cool/STlocal.js@main/Plugins/LASTkeep.js"><script>
 ```
 
 ---

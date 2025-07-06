@@ -21,7 +21,7 @@ STlocal.js - это современная библиотека для рабо�
 
 ### Подключение
 ```html
-<scrpt src="https://cdn.jsdelivr.net/gh/Leha2cool/STlocal.js@main/STlocal%20file/STlocal%403.0.0.js"></scrpt>
+ <script src="https://cdn.jsdelivr.net/gh/Leha2cool/STlocal.js@main/STlocal%20file/STlocal%403.0.0.js"></script>
 ```
 
 ### Основные возможности
